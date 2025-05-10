@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Simulador de Vuelo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <style>
+    body {
+      margin: 0;
+      background-color: black;
+      color: #00ff00;
+      font-family: 'Courier New', monospace;
+      user-select: none;
+    }
+    #map {
+      height: 100vh;
+      width: 100%;
+    }
+    .dashboard, .menu {
+      position: absolute;
+      top: 10px;
+      background-color: rgba(0, 0, 0, 0.7);
+      padding: 10px;
+      border: 1px solid #00ff00;
+      border-radius: 5px;
+      z-index: 1000;
+    }
+    .dashboard { right: 10px; }
+    .menu {
+      left: -250px;
+      width: 230px;
+      transition: left 0.3s ease-in-out;
+    }
+    .menu.active { left: 50px; }
+    .menu input, .menu p {
+      width: 100%;
+      margin: 5px 0;
+      color: #00ff00;
+      background: black;
+      border: 1px solid #00ff00;
+      padding: 5px;
+      font-size: 14px;
+      font-family: 'Courier New', monospace;
+    }
+    .menu ul {
+      list-style: none;
+      padding: 0;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+    .menu ul li {
+      padding: 5px;
+      cursor: pointer;
+      border-bottom: 1px solid #00ff00;
+    }
+    .menu ul li:hover {
+      background: #00ff00;
+      color: black;
+    }
+    #toggleMenu {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: transparent;
+      color: #00ff00;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      z-index: 1100;
+    }
+    .leaflet-tooltip.custom-tooltip {
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      color: #00ff00;
+      font-weight: bold;
+    }
+    .leaflet-marker-icon.plane-icon {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+  </style>
+</head>
+<body oncontextmenu="return false;">
+  <div id="map"></div>
+  <button id="toggleMenu">✈️</button>
+  <div class="menu" id="menu">
+    <p><strong>Buscar aeropuerto:</strong></p>
+    <input type="text" id="searchAirport" placeholder="Escribe el nombre...">
+    <p><strong>Aeropuertos disponibles:</strong></p>
+    <ul id="airportList"></ul>
+  </div>
+  <div class="dashboard">
+    <p><strong>Aeropuerto:</strong> <span id="airport">Ninguno</span></p>
+    <p><strong>Velocidad:</strong> <span id="speed">0.00</span></p>
+    <p><strong>Orientación:</strong> <span id="heading">0° (Norte)</span></p>
+    <p><strong>Ubicación:</strong> <span id="location">Lat: 0.00, Lng: 0.00</span></p>
+  </div>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    let lat = 42.897;
+    let lng = -8.415;
+    let angle = 0;
+    let speed = 0.00;
+    let airportsData = [];
+    const airportMarkers = [];
+
+    const map = L.map('map', {
+      zoomControl: false,
+      dragging: true,
+      scrollWheelZoom: true,
+      keyboard: true
+    }).setView([lat, lng], 13);
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; CartoDB',
+      subdomains: 'abcd',
+      maxZoom: 15,
+      minZoom: 8
+    }).addTo(map);
+
+    const flightPath = L.polyline([], {
+      color: '#ff00ff',
+      weight: 2,
+      opacity: 0.7
+    }).addTo(map);
+
+    const planeIcon = L.divIcon({
+  html: `<img id="plane" src="https://cdn-icons-png.flaticon.com/512/224/224686.png" style="width:40px; transform: rotate(0deg); background: transparent; display: block;">`,
+  className: 'plane-icon',
+  iconSize: [40, 40],
+  iconAnchor: [20, 20]
+});
+
+
+    const plane = L.marker([lat, lng], { icon: planeIcon }).addTo(map);
+
+    function updatePlane() {
+      lat += Math.cos(angle * Math.PI / 180) * speed;
+      lng += Math.sin(angle * Math.PI / 180) * speed;
+      plane.setLatLng([lat, lng]);
+      map.setView([lat, lng]);
+      flightPath.addLatLng([lat, lng]);
+      document.getElementById('plane').style.transform = `rotate(${angle}deg)`;
+      document.getElementById('speed').textContent = speed.toFixed(2);
+      document.getElementById('heading').textContent = `${Math.round(angle)}°`;
+      document.getElementById('location').textContent = `Lat: ${lat.toFixed(2)}, Lng: ${lng.toFixed(2)}`;
+    }
+
+    document.addEventListener('keydown', (event) => {
+      switch (event.key.toLowerCase()) {
+        case 'w': speed = Math.min(speed + 0.01, 0.2); break;
+        case 's': speed = Math.max(speed - 0.01, 0); break;
+        case 'a': angle = (angle - 10 + 360) % 360; break;
+        case 'd': angle = (angle + 10) % 360; break;
+      }
+      updatePlane();
+    });
+
+    setInterval(updatePlane, 100);
+
+    function loadAirports() {
+      fetch('./aeropuertos.json')
+        .then(response => response.json())
+        .then(data => {
+          airportsData = data;
+          displayAirportList();
+          loadVisibleAirports();
+        })
+        .catch(error => console.error('Error al cargar aeropuertos:', error));
+    }
+
+    function displayAirportList() {
+      const list = document.getElementById('airportList');
+      list.innerHTML = '';
+      airportsData.forEach(airport => {
+        const li = document.createElement('li');
+        li.textContent = airport.name;
+        li.onclick = () => {
+          lat = parseFloat(airport.lat);
+          lng = parseFloat(airport.lng);
+          angle = 0;
+          speed = 0;
+          flightPath.setLatLngs([]);
+          plane.setLatLng([lat, lng]);
+          map.setView([lat, lng], 13);
+          document.getElementById('airport').textContent = airport.name;
+        };
+        list.appendChild(li);
+      });
+    }
+
+    function loadVisibleAirports() {
+      airportMarkers.forEach(marker => marker.remove());
+      airportMarkers.length = 0;
+      const bounds = map.getBounds();
+      const zoomLevel = map.getZoom();
+      const visibleAirports = airportsData.filter(airport => {
+        const lat = parseFloat(airport.lat);
+        const lng = parseFloat(airport.lng);
+        return bounds.contains([lat, lng]);
+      });
+      let limit = 600;
+      if (zoomLevel > 13) limit = 200;
+      else if (zoomLevel <= 8) limit = 900;
+      const limitedAirports = visibleAirports.slice(0, limit);
+      limitedAirports.forEach(airport => {
+        const lat = parseFloat(airport.lat);
+        const lng = parseFloat(airport.lng);
+        const marker = L.marker([lat, lng], {
+          icon: L.icon({
+            iconUrl: 'https://i.ibb.co/WWWr8HfY/image-1.png',
+            iconSize: [25, 25],
+            iconAnchor: [12, 12],
+            popupAnchor: [0, -15]
+          })
+        }).addTo(map);
+
+        marker.bindTooltip(`<span>${airport.code}</span>`, {
+          permanent: false,
+          direction: 'top',
+          className: 'custom-tooltip'
+        });
+
+        marker.on('mouseover', () => {
+          document.getElementById('airport').textContent = airport.name;
+        });
+        marker.on('mouseout', () => {
+          document.getElementById('airport').textContent = 'Ninguno';
+        });
+
+        airportMarkers.push(marker);
+      });
+    }
+
+    document.getElementById('toggleMenu').addEventListener('click', () => {
+      document.getElementById('menu').classList.toggle('active');
+    });
+
+    document.getElementById('searchAirport').addEventListener('input', function () {
+      const filter = this.value.toLowerCase();
+      const list = document.getElementById('airportList');
+      list.innerHTML = '';
+      airportsData.filter(a => a.name.toLowerCase().includes(filter)).forEach(airport => {
+        const li = document.createElement('li');
+        li.textContent = airport.name;
+        li.onclick = () => {
+          lat = parseFloat(airport.lat);
+          lng = parseFloat(airport.lng);
+          angle = 0;
+          speed = 0;
+          flightPath.setLatLngs([]);
+          plane.setLatLng([lat, lng]);
+          map.setView([lat, lng], 13);
+          document.getElementById('airport').textContent = airport.name;
+        };
+        list.appendChild(li);
+      });
+    });
+
+    map.on('moveend', loadVisibleAirports);
+    map.on('zoomend', loadVisibleAirports);
+    window.addEventListener('resize', loadVisibleAirports);
+    loadAirports();
+  </script>
+</body>
+</html>
