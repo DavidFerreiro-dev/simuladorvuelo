@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Simulador de Vuelo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <style>
+    body {
+      margin: 0;
+      background-color: black;
+      color: #00ff00;
+      font-family: 'Courier New', monospace;
+      user-select: none;
+    }
+    #map {
+      height: 100vh;
+      width: 100%;
+    }
+    .dashboard {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background-color: rgba(0, 0, 0, 0.7);
+      padding: 10px;
+      border: 1px solid #00ff00;
+      border-radius: 5px;
+      z-index: 1000;
+    }
+    .dashboard p {
+      margin: 5px 0;
+      color: #00ff00;
+    }
+    #createJoin {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background-color: rgba(0, 0, 0, 0.7);
+      padding: 15px;
+      border: 1px solid #00ff00;
+      border-radius: 5px;
+      z-index: 1001;
+    }
+    #createJoin input, #createJoin button {
+      background-color: #00ff00;
+      color: black;
+      border: none;
+      padding: 5px 10px;
+      margin-top: 10px;
+      cursor: pointer;
+    }
+    #createJoin button {
+      margin-left: 10px;
+    }
+    .leaflet-tooltip {
+      background: transparent !important;
+      border: none !important;
+      color: #00ff00 !important;
+      font-size: 18px;
+      font-family: 'Courier New', monospace;
+      text-align: center;
+    }
+  </style>
+</head>
+<body oncontextmenu="return false;">
+  <div id="map"></div>
+
+  <!-- Menú para crear y unirse a sala -->
+  <div id="createJoin">
+    <p><strong>Sala: </strong><span id="codigoSala">-</span></p>
+    <button id="crearBtn">Crear Sala</button>
+    <div style="margin-top: 10px;">
+      <input type="text" id="unirseInput" placeholder="Código de sala" style="display:none;" />
+      <button id="unirseBtn" style="display:none;">Unirse</button>
+    </div>
+  </div>
+
+  <div class="dashboard">
+    <p><strong>Aeropuerto:</strong> <span id="airport">Ninguno</span></p>
+    <p><strong>Velocidad:</strong> <span id="speed">0.00</span></p>
+    <p><strong>Orientación:</strong> <span id="heading">0° (Norte)</span></p>
+    <p><strong>Ubicación:</strong> <span id="location">Lat: 0.00, Lng: 0.00</span></p>
+  </div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="/socket.io/socket.io.js"></script> <!-- Conexión al servidor WebSocket -->
+
+  <script>
+    const socket = io(); // Conexión al servidor WebSocket
+
+    let lat = 42.897; // Coordenadas iniciales
+    let lng = -8.415;
+    let angle = 0;
+    let speed = 0.00;
+
+    const map = L.map('map').setView([lat, lng], 13);
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; CartoDB',
+      subdomains: 'abcd',
+      maxZoom: 13,
+      minZoom: 8
+    }).addTo(map);
+
+    const planeIcon = L.divIcon({
+      className: '',
+      html: `<img id="plane" src="https://cdn-icons-png.flaticon.com/512/224/224686.png" style="width:40px; transform: rotate(0deg);">`,
+      iconSize: [40, 40],
+      iconAnchor: [20, 20]
+    });
+
+    const plane = L.marker([lat, lng], { icon: planeIcon }).addTo(map);
+
+    function updatePlane() {
+      lat += Math.cos(angle * Math.PI / 180) * speed;
+      lng += Math.sin(angle * Math.PI / 180) * speed;
+
+      plane.setLatLng([lat, lng]);
+      map.setView([lat, lng]);
+
+      document.getElementById('plane').style.transform = `rotate(${angle}deg)`;
+      document.getElementById('speed').textContent = speed.toFixed(2);
+      document.getElementById('heading').textContent = `${Math.round(angle)}°`;
+      updateLocation();
+    }
+
+    function updateLocation() {
+      document.getElementById('location').textContent = `Lat: ${lat.toFixed(2)}, Lng: ${lng.toFixed(2)}`;
+    }
+
+    // Crear sala
+    document.getElementById('crearBtn').addEventListener('click', () => {
+      const codigoSala = Math.floor(100000 + Math.random() * 900000);
+      document.getElementById('codigoSala').textContent = codigoSala;
+      socket.emit('crearSala', codigoSala);
+
+      document.getElementById('unirseInput').style.display = 'inline';
+      document.getElementById('unirseBtn').style.display = 'inline';
+    });
+
+    // Unirse a sala
+    document.getElementById('unirseBtn').addEventListener('click', () => {
+      const codigoSala = document.getElementById('unirseInput').value;
+      socket.emit('unirseSala', codigoSala);
+    });
+
+    socket.on('nuevoJugador', (message) => {
+      console.log(message);
+    });
+
+    setInterval(updatePlane, 100);
+  </script>
+</body>
+</html>
